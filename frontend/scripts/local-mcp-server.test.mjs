@@ -27,6 +27,7 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
       LOCAL_API_HOST: '127.0.0.1',
       LOCAL_API_PORT: String(port),
       LOCAL_DATA_DIR: dir,
+      LOCAL_STATIC_DIR: path.join(root, 'public'),
       LOCAL_MCP_API_KEY_FILE: keyFile,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -57,6 +58,14 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
       } catch {}
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+
+    const discovery = await fetch(`http://127.0.0.1:${port}/.well-known/mcp-server`);
+    const discoveryBody = await discovery.json();
+    assert.equal(discoveryBody.remotes[0].url, `http://127.0.0.1:${port}/api/mcp`);
+    assert.equal(discoveryBody.remotes[0].headers.length, 1);
+    assert.equal(discoveryBody.remotes[0].headers[0].name, 'Authorization');
+    const stableMetadata = await fetch(`http://127.0.0.1:${port}/openapi/mcp.json`);
+    assert.equal(stableMetadata.headers.get('cache-control'), 'no-cache');
 
     const unauthorized = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }, 'wrong-key-that-is-also-long-enough-000');
     assert.equal(unauthorized.response.status, 401);

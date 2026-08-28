@@ -157,9 +157,10 @@ function handleStatic(res, pathname) {
     : path.join(STATIC_DIR, 'index.html');
   if (!fs.existsSync(file)) return false;
   const extension = path.extname(file).toLowerCase();
+  const immutableAsset = pathname.startsWith('/assets/') && !file.endsWith('index.html');
   res.writeHead(200, {
     'Content-Type': staticContentTypes[extension] || 'application/octet-stream',
-    'Cache-Control': file.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable',
+    'Cache-Control': immutableAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
@@ -560,6 +561,34 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === '/api/health' && method === 'GET') {
       sendJson(res, 200, { status: 'ok', service: 'kanban-ai-sqlite' });
+      return;
+    }
+
+    if (pathname === '/.well-known/mcp-server' && method === 'GET') {
+      const host = String(req.headers.host ?? '');
+      if (!/^[a-z0-9.:[\]-]+$/i.test(host)) {
+        sendJson(res, 400, { error: 'Invalid Host header' });
+        return;
+      }
+      const forwardedProtocol = String(req.headers['x-forwarded-proto'] ?? '').toLowerCase();
+      const protocol = forwardedProtocol === 'https' ? 'https' : 'http';
+      sendJson(res, 200, {
+        name: 'local.kanban-ai/self-hosted',
+        title: 'Self-hosted Kanban AI',
+        description: 'Private SQLite-backed Kanban AI MCP server.',
+        version: '1.0.0',
+        remotes: [{
+          type: 'streamable-http',
+          url: `${protocol}://${host}/api/mcp`,
+          headers: [{
+            name: 'Authorization',
+            description: 'Bearer key mounted by the self-host operator.',
+            isRequired: true,
+            isSecret: true,
+            placeholder: 'Bearer <self-hosted key>',
+          }],
+        }],
+      });
       return;
     }
 
