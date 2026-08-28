@@ -65,7 +65,14 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
     assert.equal(discoveryBody.remotes[0].headers.length, 1);
     assert.equal(discoveryBody.remotes[0].headers[0].name, 'Authorization');
     const stableMetadata = await fetch(`http://127.0.0.1:${port}/openapi/mcp.json`);
-    assert.equal(stableMetadata.headers.get('cache-control'), 'no-cache');
+    assert.equal(stableMetadata.headers.get('cache-control'), 'no-store');
+    const openApi = await stableMetadata.json();
+    assert.equal(openApi.servers[0].url, `http://127.0.0.1:${port}`);
+    assert.deepEqual(Object.keys(openApi.components.securitySchemes), ['bearerAuth']);
+    assert.doesNotMatch(JSON.stringify(openApi), /kanbanai\.dev|X-MCP-API-Key|kai_…/);
+    const llms = await (await fetch(`http://127.0.0.1:${port}/llms.txt`)).text();
+    assert.match(llms, new RegExp(`127\\.0\\.0\\.1:${port}/api/mcp`));
+    assert.doesNotMatch(llms, /kanbanai\.dev|X-MCP-API-Key|Supabase/);
 
     const unauthorized = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }, 'wrong-key-that-is-also-long-enough-000');
     assert.equal(unauthorized.response.status, 401);

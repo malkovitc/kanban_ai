@@ -3,5 +3,6 @@ dist
 .env
 .env.*
 .local
+.kanban-mcp-key
 .git
 *.log

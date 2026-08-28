@@ -131,12 +131,13 @@ function sendJson(res, status, obj) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
   });
   res.end(body);
 }
 
 function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': contentType });
+  res.writeHead(status, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
   res.end(text);
 }
 
@@ -553,6 +554,38 @@ async function handleOpenAi(req, res) {
   sendJson(res, 200, json);
 }
 
+function selfHostedOrigin(req) {
+  const host = String(req.headers.host ?? '');
+  if (!/^[a-z0-9.:[\]-]+$/i.test(host)) return null;
+  const forwardedProtocol = String(req.headers['x-forwarded-proto'] ?? '').toLowerCase();
+  return `${forwardedProtocol === 'https' ? 'https' : 'http'}://${host}`;
+}
+
+function selfHostedOpenApi(origin) {
+  const templatePath = path.join(STATIC_DIR, 'openapi', 'mcp.json');
+  const document = JSON.parse(fs.readFileSync(templatePath, 'utf8'));
+  document.info.title = 'Self-hosted Kanban AI MCP';
+  document.info.description = 'Private SQLite-backed Kanban AI MCP server.';
+  document.info.contact = { name: 'Self-host operator', url: origin };
+  document.servers = [{ url: origin, description: 'This self-hosted instance' }];
+  document.components.securitySchemes = {
+    bearerAuth: {
+      type: 'http', scheme: 'bearer', bearerFormat: 'opaque',
+      description: 'Static bearer key mounted by the self-host operator.',
+    },
+  };
+  document.components.schemas.UnauthorizedError.properties.hint.example =
+    'Send Authorization: Bearer <self-hosted key>.';
+  for (const item of Object.values(document.paths)) {
+    for (const operation of Object.values(item)) {
+      if (operation && typeof operation === 'object' && 'security' in operation) {
+        operation.security = [{ bearerAuth: [] }];
+      }
+    }
+  }
+  return document;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
@@ -565,13 +598,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/.well-known/mcp-server' && method === 'GET') {
-      const host = String(req.headers.host ?? '');
-      if (!/^[a-z0-9.:[\]-]+$/i.test(host)) {
+      const origin = selfHostedOrigin(req);
+      if (!origin) {
         sendJson(res, 400, { error: 'Invalid Host header' });
         return;
       }
-      const forwardedProtocol = String(req.headers['x-forwarded-proto'] ?? '').toLowerCase();
-      const protocol = forwardedProtocol === 'https' ? 'https' : 'http';
       sendJson(res, 200, {
         name: 'local.kanban-ai/self-hosted',
         title: 'Self-hosted Kanban AI',
@@ -579,7 +610,7 @@ const server = http.createServer(async (req, res) => {
         version: '1.0.0',
         remotes: [{
           type: 'streamable-http',
-          url: `${protocol}://${host}/api/mcp`,
+          url: `${origin}/api/mcp`,
           headers: [{
             name: 'Authorization',
             description: 'Bearer key mounted by the self-host operator.',
@@ -589,6 +620,26 @@ const server = http.createServer(async (req, res) => {
           }],
         }],
       });
+      return;
+    }
+
+    if (pathname === '/openapi/mcp.json' && method === 'GET') {
+      const origin = selfHostedOrigin(req);
+      if (!origin) {
+        sendJson(res, 400, { error: 'Invalid Host header' });
+        return;
+      }
+      sendJson(res, 200, selfHostedOpenApi(origin));
+      return;
+    }
+
+    if ((pathname === '/llms.txt' || pathname === '/llms-full.txt') && method === 'GET') {
+      const origin = selfHostedOrigin(req);
+      if (!origin) {
+        sendText(res, 400, 'Invalid Host header');
+        return;
+      }
+      sendText(res, 200, `# Self-hosted Kanban AI\n\nPrivate SQLite board and MCP server.\n\nMCP endpoint: ${origin}/api/mcp\nAuthentication: Authorization: Bearer <operator-mounted key>\nTools: list_projects, get_board, create_project, update_project, delete_project, create_task, update_task, delete_task, list_task_comments, add_task_comment, delete_task_comment.\nLarge boards: call get_board with include_comments=false and use list_task_comments for selected threads.\n`);
       return;
     }
 
