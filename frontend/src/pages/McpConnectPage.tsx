@@ -122,8 +122,8 @@ export default function McpConnectPage({ isDarkMode }: { isDarkMode: boolean }) 
               <p className={`max-w-lg text-sm leading-relaxed ${muted}`}>
                 Endpoint: <code className="rounded bg-black/10 px-1">/api/mcp</code>. Configure your MCP client
                 with this instance origin and the bearer key mounted by the operator. The key is intentionally
-                never displayed in the browser. Keep the container loopback-only and connect through a trusted
-                SSH tunnel or TLS reverse proxy.
+                never displayed in the browser. Keep the container loopback-only and connect through an
+                authenticated SSH tunnel. Do not expose this local-mode UI or API through a public reverse proxy.
               </p>
             ) : (
               <p className={`max-w-md text-sm leading-relaxed ${muted}`}>
