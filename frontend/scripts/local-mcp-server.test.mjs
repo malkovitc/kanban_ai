@@ -66,8 +66,15 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
     const toolPayload = parseMcpResponse(tools.body);
     assert.ok(toolPayload.result.tools.some((tool) => tool.name === 'get_board'));
 
-    const create = await post({
+    const blank = await post({
       jsonrpc: '2.0', id: 3, method: 'tools/call',
+      params: { name: 'create_project', arguments: { title: '   ', description: '   ' } },
+    });
+    const blankPayload = parseMcpResponse(blank.body);
+    assert.equal(blankPayload.result.isError, true);
+
+    const create = await post({
+      jsonrpc: '2.0', id: 4, method: 'tools/call',
       params: { name: 'create_project', arguments: { title: 'Local', description: 'Private board', num_sprints: 12 } },
     });
     const createPayload = parseMcpResponse(create.body);

@@ -7,6 +7,7 @@ const LOCAL_USER_ID = '00000000-0000-4000-8000-000000000001';
 const statuses = ['todo', 'in-progress', 'done'];
 const types = ['bug', 'feature', 'scope'];
 const priorities = ['low', 'medium', 'high'];
+const nonEmptyText = z.string().trim().min(1);
 
 function result(data) {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
@@ -106,7 +107,7 @@ function createServer(db) {
   server.registerTool('create_project', {
     description: 'Create a project.',
     inputSchema: {
-      title: z.string().min(1), description: z.string().min(1),
+      title: nonEmptyText, description: nonEmptyText,
       projectType: z.string().optional(), num_sprints: z.number().int().min(1).max(52).optional(),
       private: z.boolean().optional(), master_plan: z.string().optional(), initial_prompt: z.string().optional(),
       keywords: z.string().optional(), notes: z.string().optional(),
@@ -134,7 +135,7 @@ function createServer(db) {
   server.registerTool('update_project', {
     description: 'Update project metadata.',
     inputSchema: {
-      project_id: z.string().uuid(), title: z.string().optional(), description: z.string().optional(),
+      project_id: z.string().uuid(), title: nonEmptyText.optional(), description: nonEmptyText.optional(),
       master_plan: z.string().optional(), initial_prompt: z.string().optional(), keywords: z.string().optional(),
       projectType: z.string().optional(), num_sprints: z.number().int().optional(),
       current_sprint: z.number().int().optional(), due_date: z.string().nullable().optional(),
@@ -166,7 +167,7 @@ function createServer(db) {
   server.registerTool('create_task', {
     description: 'Create a task.',
     inputSchema: {
-      project_id: z.string().uuid(), title: z.string().min(1), description: z.string().optional(),
+      project_id: z.string().uuid(), title: nonEmptyText, description: z.string().optional(),
       type: z.enum(types).optional(), priority: z.enum(priorities).optional(), status: z.enum(statuses).optional(),
       sprint: z.number().int().min(1).optional(), due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     },
@@ -187,7 +188,7 @@ function createServer(db) {
   server.registerTool('update_task', {
     description: 'Update a task.',
     inputSchema: {
-      task_id: z.string().uuid(), title: z.string().optional(), description: z.string().optional(),
+      task_id: z.string().uuid(), title: nonEmptyText.optional(), description: z.string().optional(),
       type: z.enum(types).optional(), priority: z.enum(priorities).optional(), status: z.enum(statuses).optional(),
       sprint: z.number().int().min(1).optional(), due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     },
@@ -217,7 +218,7 @@ function createServer(db) {
 
   server.registerTool('add_task_comment', {
     description: 'Add a comment to a task.',
-    inputSchema: { task_id: z.string().uuid(), body: z.string().min(1), author_display_name: z.string().optional() },
+    inputSchema: { task_id: z.string().uuid(), body: nonEmptyText, author_display_name: z.string().optional() },
   }, async ({ task_id, body, author_display_name }) => {
     assertTaskAccess(db, task_id);
     const row = { id: randomUUID(), task_id, user_id: LOCAL_USER_ID, body: body.trim(), author_display_name: author_display_name ?? 'MCP Agent', created_at: new Date().toISOString() };
