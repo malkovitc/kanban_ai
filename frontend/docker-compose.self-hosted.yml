@@ -3,6 +3,7 @@ services:
     image: ghcr.io/malkovitc/kanban-ai-self-hosted:${KANBAN_IMAGE_TAG:?set KANBAN_IMAGE_TAG}
     container_name: kanban-ai-self-hosted
     restart: unless-stopped
+    user: "${KANBAN_RUNTIME_UID:-10001}:${KANBAN_RUNTIME_GID:-10001}"
     read_only: true
     ports:
       - "127.0.0.1:${KANBAN_HOST_PORT:-3331}:3000"
