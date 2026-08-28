@@ -54,7 +54,7 @@ docker build -f Dockerfile.self-hosted -t "ghcr.io/malkovitc/kanban-ai-self-host
 docker compose -f docker-compose.self-hosted.yml up -d
 ```
 
-The compose contract binds only to `127.0.0.1:3331`, stores the database in a named volume, runs as an unprivileged user with a read-only root filesystem, and caps the container at 192 MB RAM and 0.5 CPU. It defaults to image UID/GID 10001. If the mode-600 key is owned by a different non-root deployment account, set `KANBAN_RUNTIME_UID=$(id -u)` and `KANBAN_RUNTIME_GID=$(id -g)` and ensure the data volume is owned by the same IDs before startup. UI: `http://127.0.0.1:3331`; MCP: `http://127.0.0.1:3331/api/mcp` with `Authorization: Bearer <contents of .kanban-mcp-key>`.
+The compose contract binds only to `127.0.0.1:3331`, stores the database in a named volume, runs as an unprivileged user with a read-only root filesystem, and caps the container at 192 MB RAM and 0.5 CPU. It defaults to image UID/GID 10001. If the mode-600 key is owned by a different non-root deployment account, set `export KANBAN_RUNTIME_UID=$(id -u)` and `export KANBAN_RUNTIME_GID=$(id -g)` and ensure the data volume is owned by the same IDs before startup. UI: `http://127.0.0.1:3331`; MCP: `http://127.0.0.1:3331/api/mcp` with `Authorization: Bearer <contents of .kanban-mcp-key>`.
 
 For large boards, call `get_board` with `include_comments=false`; optionally pass `sprint`. Retrieve a selected task thread with `list_task_comments`.
 
