@@ -31,17 +31,22 @@ function assertTaskAccess(db, taskId) {
   return row.project_id;
 }
 
+function normalizeProject(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    complete: Boolean(row.complete),
+    private: row.private == null ? true : Boolean(row.private),
+  };
+}
+
 function listProjects(db) {
   return db.prepare(
     `SELECT p.* FROM projects p
        JOIN project_collaborators pc ON pc.project_id=p.id
       WHERE pc.user_id=? AND pc.accepted=1
       ORDER BY datetime(COALESCE(p.created_at,'1970-01-01')) ASC`,
-  ).all(LOCAL_USER_ID).map((row) => ({
-    ...row,
-    complete: Boolean(row.complete),
-    private: row.private == null ? true : Boolean(row.private),
-  }));
+  ).all(LOCAL_USER_ID).map(normalizeProject);
 }
 
 function listTasks(db, projectId, sprint) {
@@ -60,7 +65,7 @@ function listTasks(db, projectId, sprint) {
 
 function boardContext(db, projectId, sprint, includeComments) {
   assertProjectAccess(db, projectId);
-  const project = db.prepare('SELECT * FROM projects WHERE id=?').get(projectId);
+  const project = normalizeProject(db.prepare('SELECT * FROM projects WHERE id=?').get(projectId));
   const tasks = listTasks(db, projectId, sprint);
   if (!includeComments || tasks.length === 0) return { project, tasks };
   const placeholders = tasks.map(() => '?').join(',');
@@ -144,7 +149,10 @@ function createServer(db) {
       db.prepare(`UPDATE projects SET ${values.map(([key]) => `${key}=@${key}`).join(',')} WHERE id=@id`)
         .run(Object.fromEntries([...values, ['id', project_id]]));
     }
-    return result({ success: true, project: db.prepare('SELECT * FROM projects WHERE id=?').get(project_id) });
+    return result({
+      success: true,
+      project: normalizeProject(db.prepare('SELECT * FROM projects WHERE id=?').get(project_id)),
+    });
   });
 
   server.registerTool('delete_project', {

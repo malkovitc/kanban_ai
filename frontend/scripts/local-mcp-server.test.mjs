@@ -31,6 +31,7 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  const exited = new Promise((resolve) => child.once('exit', resolve));
   const output = [];
   child.stdout.on('data', (chunk) => output.push(chunk));
   child.stderr.on('data', (chunk) => output.push(chunk));
@@ -87,11 +88,13 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
     });
     const boardPayload = parseMcpResponse(board.body);
     const context = JSON.parse(boardPayload.result.content[0].text);
+    assert.equal(typeof context.project.complete, 'boolean');
+    assert.equal(typeof context.project.private, 'boolean');
     assert.deepEqual(context.tasks.map((task) => task.sprint), [1, 2, 12]);
     assert.ok(context.tasks.every((task) => !Object.hasOwn(task, 'comments')));
   } finally {
-    child.kill('SIGTERM');
-    await new Promise((resolve) => child.once('exit', resolve));
+    if (child.exitCode === null) child.kill('SIGTERM');
+    await exited;
     await rm(dir, { recursive: true, force: true });
   }
 }, { timeout: 30_000 });
