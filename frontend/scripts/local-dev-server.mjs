@@ -2,21 +2,25 @@
  * Local dev API for VITE_LOCAL_MODE: SQLite persistence + OpenAI proxy.
  * Run via `npm run dev:local` (with Vite). Listens on port 3000 — Vite proxies `/api` here.
  */
+import { timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+import { handleLocalMcpRequest } from './local-mcp-server.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.join(__dirname, '..');
 const REPO_ROOT = path.join(FRONTEND_ROOT, '..');
-const DATA_DIR = path.join(REPO_ROOT, '.local');
+const DATA_DIR = process.env.LOCAL_DATA_DIR || path.join(REPO_ROOT, '.local');
 const DB_PATH = path.join(DATA_DIR, 'kanban.sqlite');
 const SCHEMA_PATH = path.join(__dirname, 'local-schema.sql');
+const STATIC_DIR = process.env.LOCAL_STATIC_DIR || '';
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 const PORT = Number(process.env.LOCAL_API_PORT || 3000);
+const HOST = process.env.LOCAL_API_HOST || '127.0.0.1';
 
 function loadDotEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -38,12 +42,35 @@ function loadDotEnvFile(filePath) {
 loadDotEnvFile(path.join(FRONTEND_ROOT, '.env'));
 loadDotEnvFile(path.join(FRONTEND_ROOT, '.env.local'));
 
+function readMcpKey() {
+  const file = process.env.LOCAL_MCP_API_KEY_FILE;
+  const value = file ? fs.readFileSync(file, 'utf8').trim() : process.env.LOCAL_MCP_API_KEY?.trim();
+  if (!value) return null;
+  if (value.length < 32 || value.length > 512 || /[\r\n\0]/.test(value)) {
+    throw new Error('LOCAL_MCP_API_KEY must contain 32-512 safe characters');
+  }
+  return value;
+}
+
+const localMcpApiKey = readMcpKey();
+
+function authorizedMcpRequest(req) {
+  if (!localMcpApiKey) return false;
+  const auth = req.headers.authorization?.trim() ?? '';
+  if (!auth.toLowerCase().startsWith('bearer ')) return false;
+  const provided = auth.slice(7).trim();
+  const expectedBytes = Buffer.from(localMcpApiKey);
+  const providedBytes = Buffer.from(provided);
+  return providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes);
+}
+
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
 
 function boolFromSql(v) {
@@ -104,13 +131,43 @@ function sendJson(res, status, obj) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
   });
   res.end(body);
 }
 
 function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': contentType });
+  res.writeHead(status, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
   res.end(text);
+}
+
+const staticContentTypes = {
+  '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8',
+  '.webp': 'image/webp', '.woff2': 'font/woff2',
+};
+
+function handleStatic(res, pathname) {
+  if (!STATIC_DIR) return false;
+  const requested = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
+  const candidate = path.resolve(STATIC_DIR, requested);
+  const root = `${path.resolve(STATIC_DIR)}${path.sep}`;
+  let file = candidate.startsWith(root) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()
+    ? candidate
+    : path.join(STATIC_DIR, 'index.html');
+  if (!fs.existsSync(file)) return false;
+  const extension = path.extname(file).toLowerCase();
+  const immutableAsset = pathname.startsWith('/assets/') && !file.endsWith('index.html');
+  res.writeHead(200, {
+    'Content-Type': staticContentTypes[extension] || 'application/octet-stream',
+    'Cache-Control': immutableAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+  });
+  fs.createReadStream(file).pipe(res);
+  return true;
 }
 
 /** GET /api/local/workspace?user_id=… */
@@ -497,11 +554,107 @@ async function handleOpenAi(req, res) {
   sendJson(res, 200, json);
 }
 
+function selfHostedOrigin(req) {
+  const host = String(req.headers.host ?? '');
+  if (!/^[a-z0-9.:[\]-]+$/i.test(host)) return null;
+  const forwardedProtocol = String(req.headers['x-forwarded-proto'] ?? '').toLowerCase();
+  return `${forwardedProtocol === 'https' ? 'https' : 'http'}://${host}`;
+}
+
+function selfHostedOpenApi(origin) {
+  const templatePath = path.join(STATIC_DIR, 'openapi', 'mcp.json');
+  const document = JSON.parse(fs.readFileSync(templatePath, 'utf8'));
+  document.info.title = 'Self-hosted Kanban AI MCP';
+  document.info.description = 'Private SQLite-backed Kanban AI MCP server.';
+  document.info.contact = { name: 'Self-host operator', url: origin };
+  document.servers = [{ url: origin, description: 'This self-hosted instance' }];
+  document.components.securitySchemes = {
+    bearerAuth: {
+      type: 'http', scheme: 'bearer', bearerFormat: 'opaque',
+      description: 'Static bearer key mounted by the self-host operator.',
+    },
+  };
+  document.components.schemas.UnauthorizedError.properties.hint.example =
+    'Send Authorization: Bearer <self-hosted key>.';
+  for (const item of Object.values(document.paths)) {
+    for (const operation of Object.values(item)) {
+      if (operation && typeof operation === 'object' && 'security' in operation) {
+        operation.security = [{ bearerAuth: [] }];
+      }
+    }
+  }
+  return document;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
     const pathname = url.pathname.replace(/\/$/, '') || '/';
     const method = req.method || 'GET';
+
+    if (pathname === '/api/health' && method === 'GET') {
+      sendJson(res, 200, { status: 'ok', service: 'kanban-ai-sqlite' });
+      return;
+    }
+
+    if (pathname === '/.well-known/mcp-server' && method === 'GET') {
+      const origin = selfHostedOrigin(req);
+      if (!origin) {
+        sendJson(res, 400, { error: 'Invalid Host header' });
+        return;
+      }
+      sendJson(res, 200, {
+        name: 'local.kanban-ai/self-hosted',
+        title: 'Self-hosted Kanban AI',
+        description: 'Private SQLite-backed Kanban AI MCP server.',
+        version: '1.0.0',
+        remotes: [{
+          type: 'streamable-http',
+          url: `${origin}/api/mcp`,
+          headers: [{
+            name: 'Authorization',
+            description: 'Bearer key mounted by the self-host operator.',
+            isRequired: true,
+            isSecret: true,
+            placeholder: 'Bearer <self-hosted key>',
+          }],
+        }],
+      });
+      return;
+    }
+
+    if (pathname === '/openapi/mcp.json' && method === 'GET') {
+      const origin = selfHostedOrigin(req);
+      if (!origin) {
+        sendJson(res, 400, { error: 'Invalid Host header' });
+        return;
+      }
+      sendJson(res, 200, selfHostedOpenApi(origin));
+      return;
+    }
+
+    if ((pathname === '/llms.txt' || pathname === '/llms-full.txt') && method === 'GET') {
+      const origin = selfHostedOrigin(req);
+      if (!origin) {
+        sendText(res, 400, 'Invalid Host header');
+        return;
+      }
+      sendText(res, 200, `# Self-hosted Kanban AI\n\nPrivate SQLite board and MCP server.\n\nMCP endpoint: ${origin}/api/mcp\nAuthentication: Authorization: Bearer <operator-mounted key>\nTools: list_projects, get_board, create_project, update_project, delete_project, create_task, update_task, delete_task, list_task_comments, add_task_comment, delete_task_comment.\nLarge boards: call get_board with include_comments=false and use list_task_comments for selected threads.\n`);
+      return;
+    }
+
+    if (pathname === '/api/mcp') {
+      if (method !== 'POST') {
+        sendJson(res, 405, { error: 'Method not allowed' });
+        return;
+      }
+      if (!authorizedMcpRequest(req)) {
+        sendJson(res, 401, { error: 'Unauthorized' });
+        return;
+      }
+      await handleLocalMcpRequest(req, res, await readBodyJson(req), db);
+      return;
+    }
 
     if (pathname === '/api/openai') {
       await handleOpenAi(req, res);
@@ -606,6 +759,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (method === 'GET' && !pathname.startsWith('/api/') && handleStatic(res, pathname)) {
+      return;
+    }
+
     sendJson(res, 404, { error: 'Not found', path: pathname });
   } catch (e) {
     console.error(e);
@@ -613,6 +770,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[local-dev-server] http://127.0.0.1:${PORT}  SQLite → ${DB_PATH}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[local-dev-server] http://${HOST}:${PORT}  SQLite → ${DB_PATH}  MCP=${localMcpApiKey ? 'enabled' : 'disabled'}`);
 });

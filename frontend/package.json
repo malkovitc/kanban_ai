@@ -8,6 +8,7 @@
     "dev:local": "concurrently -k -n api,vite -c blue,green \"node scripts/local-dev-server.mjs\" \"vite\"",
     "build": "vite build && node scripts/prerender.mjs",
     "build:no-prerender": "vite build",
+    "test:self-hosted-mcp": "node --test scripts/local-mcp-server.test.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

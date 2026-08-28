@@ -109,24 +109,36 @@ export default function McpConnectPage({ isDarkMode }: { isDarkMode: boolean }) 
   const sideItem = isDarkMode ? 'bg-zinc-950/80' : 'bg-zinc-50';
 
   if (isLocalAppMode()) {
+    const selfHostedMcp = import.meta.env.VITE_SELF_HOSTED_MCP === 'true';
     return (
       <>
         <SEO title="Connect AI — Kanban AI" description="MCP setup for Claude and Cursor." noindex />
         <AppPageShell isDarkMode={isDarkMode} maxWidth="2xl">
           <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center">
-            <h1 className={`text-xl font-semibold ${ink}`}>Connect on kanbanai.dev</h1>
-            <p className={`max-w-md text-sm leading-relaxed ${muted}`}>
-              MCP runs on the hosted API. Sign in at{' '}
-              <a
-                href="https://kanbanai.dev/connect"
-                className={`font-semibold underline-offset-4 hover:underline ${
-                  isDarkMode ? 'text-zinc-200' : 'text-zinc-800'
-                }`}
-              >
-                kanbanai.dev/connect
-              </a>{' '}
-              for one-click config, or run <code className="rounded bg-black/10 px-1">vercel dev</code> locally.
-            </p>
+            <h1 className={`text-xl font-semibold ${ink}`}>
+              {selfHostedMcp ? 'Self-hosted MCP is enabled' : 'Connect on kanbanai.dev'}
+            </h1>
+            {selfHostedMcp ? (
+              <p className={`max-w-lg text-sm leading-relaxed ${muted}`}>
+                Endpoint: <code className="rounded bg-black/10 px-1">/api/mcp</code>. Configure your MCP client
+                with this instance origin and the bearer key mounted by the operator. The key is intentionally
+                never displayed in the browser. Keep the container loopback-only and connect through an
+                authenticated SSH tunnel. Do not expose this local-mode UI or API through a public reverse proxy.
+              </p>
+            ) : (
+              <p className={`max-w-md text-sm leading-relaxed ${muted}`}>
+                MCP runs on the hosted API. Sign in at{' '}
+                <a
+                  href="https://kanbanai.dev/connect"
+                  className={`font-semibold underline-offset-4 hover:underline ${
+                    isDarkMode ? 'text-zinc-200' : 'text-zinc-800'
+                  }`}
+                >
+                  kanbanai.dev/connect
+                </a>{' '}
+                for one-click config, or run <code className="rounded bg-black/10 px-1">vercel dev</code> locally.
+              </p>
+            )}
           </div>
         </AppPageShell>
       </>

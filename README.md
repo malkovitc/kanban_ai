@@ -40,6 +40,24 @@ npm run dev:local
 
 Open **http://localhost:5173**.
 
+### Minimal self-hosted Docker + SQLite MCP
+
+The hardened single-container image serves the built UI, the SQLite API, and an authenticated MCP endpoint without Supabase:
+
+```bash
+cd frontend
+export KANBAN_IMAGE_TAG=local
+export KANBAN_MCP_KEY_FILE="$PWD/.kanban-mcp-key"
+umask 077
+openssl rand -hex 32 > "$KANBAN_MCP_KEY_FILE"
+docker build -f Dockerfile.self-hosted -t "ghcr.io/malkovitc/kanban-ai-self-hosted:$KANBAN_IMAGE_TAG" .
+docker compose -f docker-compose.self-hosted.yml up -d
+```
+
+The compose contract binds only to `127.0.0.1:3331`, stores the database in a named volume, runs as an unprivileged user with a read-only root filesystem, and caps the container at 192 MB RAM and 0.5 CPU. UI: `http://127.0.0.1:3331`; MCP: `http://127.0.0.1:3331/api/mcp` with `Authorization: Bearer <contents of .kanban-mcp-key>`.
+
+For large boards, call `get_board` with `include_comments=false`; optionally pass `sprint`. Retrieve a selected task thread with `list_task_comments`.
+
 ### What works in local mode
 
 | Feature | Local |

@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1.7
+FROM node:22-bookworm-slim AS build
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN VITE_LOCAL_MODE=true VITE_SELF_HOSTED_MCP=true npm run build:no-prerender
+
+FROM node:22-bookworm-slim AS runtime
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/malkovitc/kanban_ai" \
+      org.opencontainers.image.revision="$SOURCE_REVISION"
+ENV NODE_ENV=production \
+    LOCAL_API_HOST=0.0.0.0 \
+    LOCAL_API_PORT=3000 \
+    LOCAL_DATA_DIR=/data \
+    LOCAL_STATIC_DIR=/app/public \
+    LOCAL_MCP_API_KEY_FILE=/run/secrets/kanban_mcp_key
+WORKDIR /app
+RUN printf '%s\n' '{"name":"kanban-ai-self-hosted","private":true,"type":"module"}' > package.json \
+ && npm install --omit=dev --no-audit --no-fund \
+      @modelcontextprotocol/sdk@1.26.0 better-sqlite3@11.8.1 zod@3.25.76 \
+ && useradd --system --uid 10001 --home /nonexistent --shell /usr/sbin/nologin kanban \
+ && mkdir -p /data /app/public \
+ && chown -R kanban:kanban /data /app
+COPY --from=build --chown=kanban:kanban /src/dist/ /app/public/
+COPY --chown=kanban:kanban scripts/local-dev-server.mjs scripts/local-mcp-server.mjs scripts/local-schema.sql /app/scripts/
+USER 10001:10001
+EXPOSE 3000
+VOLUME ["/data"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+CMD ["node", "scripts/local-dev-server.mjs"]
