@@ -1,0 +1,27 @@
+services:
+  kanban:
+    image: ghcr.io/malkovitc/kanban-ai-self-hosted:${KANBAN_IMAGE_TAG:?set KANBAN_IMAGE_TAG}
+    container_name: kanban-ai-self-hosted
+    restart: unless-stopped
+    read_only: true
+    ports:
+      - "127.0.0.1:${KANBAN_HOST_PORT:-3331}:3000"
+    volumes:
+      - kanban-data:/data
+    secrets:
+      - kanban_mcp_key
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 192m
+    cpus: 0.50
+
+volumes:
+  kanban-data:
+
+secrets:
+  kanban_mcp_key:
+    file: ${KANBAN_MCP_KEY_FILE:?set KANBAN_MCP_KEY_FILE}
