@@ -2,6 +2,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { X, Calendar, User, ChevronDown } from 'lucide-react';
 import type { Status, Task } from '../types';
+import { BOARD_COLUMNS } from '../lib/boardStatus';
 import type { AssigneeOption } from '../lib/assignee';
 import TextareaAutosize from 'react-textarea-autosize';
 import { v4 as uuidv4 } from 'uuid';
@@ -22,11 +23,7 @@ interface CreateTaskModalProps {
   assigneeOptions?: AssigneeOption[];
 }
 
-const STATUS_OPTIONS: { id: Status; label: string }[] = [
-  { id: 'todo', label: 'To do' },
-  { id: 'in-progress', label: 'In progress' },
-  { id: 'done', label: 'Done' },
-];
+const STATUS_OPTIONS = BOARD_COLUMNS;
 
 export default function CreateTaskModal({
   onClose,
@@ -176,7 +173,7 @@ export default function CreateTaskModal({
                         }`}
                         aria-pressed={active}
                       >
-                        {opt.label}
+                        {opt.title}
                       </button>
                     );
                   })}

@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 
 const LOCAL_USER_ID = '00000000-0000-4000-8000-000000000001';
-const statuses = ['todo', 'in-progress', 'done'];
+const statuses = ['planning', 'todo', 'in-progress', 'blocked', 'done', 'archived'];
 const types = ['bug', 'feature', 'scope'];
 const priorities = ['low', 'medium', 'high'];
 const nonEmptyText = z.string().trim().min(1);

@@ -3,6 +3,7 @@ import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { Link } from 'react-router-dom';
 import { X, Calendar, User, Trash2, ArrowUp, Loader2, Sparkles } from 'lucide-react';
 import type { Task, TaskComment, Status } from '../types';
+import { BOARD_COLUMNS, originalStatusLabel } from '../lib/boardStatus';
 import type { AssigneeOption } from '../lib/assignee';
 
 const TaskModalCalendar = lazyWithRetry(() => import('./TaskModalCalendar'));
@@ -462,11 +463,9 @@ export default function TaskModal({
   const datepickerShellClass =
     'absolute left-0 top-full z-[60] mt-2 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-800 [&_.react-datepicker]:!border-gray-700 [&_.react-datepicker]:!bg-gray-800 [&_.react-datepicker__triangle]:!hidden [&_.react-datepicker__header]:!border-gray-700 [&_.react-datepicker__header]:!bg-gray-800 [&_.react-datepicker__current-month]:!text-gray-100 [&_.react-datepicker__day-name]:!text-gray-400 [&_.react-datepicker__day]:!text-gray-200 [&_.react-datepicker__day:hover]:!bg-gray-700 [&_.react-datepicker__day--outside-month]:!text-gray-500 [&_.react-datepicker__day--selected]:!bg-indigo-600 [&_.react-datepicker__day--selected]:!text-white [&_.react-datepicker__day--keyboard-selected]:!bg-indigo-600/70 [&_.react-datepicker__navigation-icon::before]:!border-gray-300';
 
-  const statusChipOptions: { id: Status; label: string }[] = [
-    { id: 'todo', label: 'To do' },
-    { id: 'in-progress', label: 'In progress' },
-    { id: 'done', label: 'Done' },
-  ];
+  const statusChipOptions: ReadonlyArray<{ id: Status; title: string }> = BOARD_COLUMNS.some((option) => option.id === status)
+    ? BOARD_COLUMNS
+    : [{ id: status, title: originalStatusLabel(status) }, ...BOARD_COLUMNS];
 
   return (
     <div
@@ -540,7 +539,7 @@ export default function TaskModal({
                         }`}
                         aria-pressed={active}
                       >
-                        {opt.label}
+                        {opt.title}
                       </button>
                     );
                   })}
@@ -558,9 +557,9 @@ export default function TaskModal({
                     onChange={handleStatusChange}
                     className={fieldSelectClass}
                   >
-                    <option value="todo">Todo</option>
-                    <option value="in-progress">In progress</option>
-                    <option value="done">Done</option>
+                    {statusChipOptions.map((option) => (
+                      <option key={option.id} value={option.id}>{option.title}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="max-sm:col-span-2">

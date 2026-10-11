@@ -4,6 +4,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { Plus, Minus, Eye, EyeOff, Link as LinkIcon, Plug, Users, X, Filter, Sparkles } from 'lucide-react';
 import TaskCard from '../components/TaskCard';
 import type { Project, Task, Priority, TaskType, Status } from '../types';
+import { BOARD_COLUMNS, groupTasksByBoardColumn, type BoardColumnId } from '../lib/boardStatus';
 import {
   deleteTaskRow,
   fetchProjectMetaFields,
@@ -64,12 +65,6 @@ function clampSprint(sprint: number, maxSprints: number): number {
   return Math.min(Math.max(1, Math.floor(sprint)), max);
 }
 
-const BOARD_COLUMNS = [
-  { id: 'todo' as const, title: 'To do' },
-  { id: 'in-progress' as const, title: 'In progress' },
-  { id: 'done' as const, title: 'Done' },
-] as const;
-
 interface KanbanBoardProps {
   isDarkMode: boolean;
   projects?: Project[];
@@ -101,8 +96,9 @@ export default function KanbanBoard({
     setTasks((prev) =>
       prev.map((t) => {
         if (t.id !== taskId) return t;
-        const { aiBrandish: _b, ...rest } = t;
-        return rest as Task;
+        const rest = { ...t };
+        delete rest.aiBrandish;
+        return rest;
       })
     );
   }, []);
@@ -161,7 +157,7 @@ export default function KanbanBoard({
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createDefaultStatus, setCreateDefaultStatus] = useState<Status>('todo');
-  const [mobileColumn, setMobileColumn] = useState<Status>('todo');
+  const [mobileColumn, setMobileColumn] = useState<BoardColumnId>('todo');
   const [quickCaptureTitle, setQuickCaptureTitle] = useState('');
   const [isQuickCreating, setIsQuickCreating] = useState(false);
   const [chatOpenRequest, setChatOpenRequest] = useState(0);
@@ -550,7 +546,10 @@ export default function KanbanBoard({
   const handleQuickCapture = async (e?: React.FormEvent) => {
     e?.preventDefault();
     const title = quickCaptureTitle.trim();
-    if (!title || !currentProject || isQuickCreating) return;
+    if (!title) return;
+    if (!currentProject) return;
+    if (isQuickCreating) return;
+    if (mobileColumn === 'unrecognized') return;
 
     const ts = new Date().toISOString();
     const newTask: Task = {
@@ -1085,21 +1084,20 @@ export default function KanbanBoard({
       return true;
     };
 
-    const out: Record<(typeof BOARD_COLUMNS)[number]['id'], Task[]> = {
-      todo: [],
-      'in-progress': [],
-      done: [],
-    };
-    for (const t of tasks) {
-      if (t.sprint !== activeSprint || !matchesSearch(t) || !matchesFilters(t)) continue;
-      if (t.status === 'todo' || t.status === 'in-progress' || t.status === 'done') {
-        out[t.status].push(t);
-      }
-    }
-    return out;
+    return groupTasksByBoardColumn(
+      tasks.filter((task) => task.sprint === activeSprint && matchesSearch(task) && matchesFilters(task))
+    );
   }, [tasks, searchQuery, activeSprint, assigneeFilter, typeFilter, priorityFilter]);
+  const visibleColumns: ReadonlyArray<{ id: BoardColumnId; title: string }> = tasksByColumn.unrecognized.length
+    ? [...BOARD_COLUMNS, { id: 'unrecognized', title: 'Unrecognized' }]
+    : BOARD_COLUMNS;
+  useEffect(() => {
+    if (mobileColumn !== 'unrecognized') return;
+    if (tasksByColumn.unrecognized.length > 0) return;
+    setMobileColumn('blocked');
+  }, [mobileColumn, tasksByColumn.unrecognized.length]);
 
-  const renderColumnTasks = (columnId: Status) => {
+  const renderColumnTasks = (columnId: BoardColumnId) => {
     const columnTasks = tasksByColumn[columnId];
     return columnTasks.map((task, index) => (
       <div
@@ -1640,11 +1638,11 @@ export default function KanbanBoard({
             <div
               role="tablist"
               aria-label="Task status"
-              className={`grid grid-cols-3 gap-1 rounded-xl p-1 ${
+              className={`flex gap-1 overflow-x-auto rounded-xl p-1 ${
                 isDarkMode ? 'bg-zinc-900/80' : 'bg-zinc-100'
               }`}
             >
-              {BOARD_COLUMNS.map((column) => {
+              {visibleColumns.map((column) => {
                 const count = tasksByColumn[column.id].length;
                 const active = mobileColumn === column.id;
                 return (
@@ -1654,7 +1652,7 @@ export default function KanbanBoard({
                     role="tab"
                     aria-selected={active}
                     onClick={() => setMobileColumn(column.id)}
-                    className={`flex min-h-10 flex-col items-center justify-center rounded-lg px-1 py-1.5 transition-colors ${
+                    className={`flex min-h-10 min-w-[6.5rem] shrink-0 flex-col items-center justify-center rounded-lg px-1 py-1.5 transition-colors ${
                       active
                         ? isDarkMode
                           ? 'bg-zinc-800 text-zinc-100 shadow-sm'
@@ -1691,11 +1689,12 @@ export default function KanbanBoard({
                   isDarkMode ? 'text-zinc-500' : 'text-zinc-500'
                 }`}
               >
-                {BOARD_COLUMNS.find((c) => c.id === mobileColumn)?.title}
+                {visibleColumns.find((c) => c.id === mobileColumn)?.title}
               </p>
               <button
                 type="button"
-                onClick={() => openCreateModal(mobileColumn)}
+                disabled={mobileColumn === 'unrecognized'}
+                onClick={() => openCreateModal(mobileColumn === 'unrecognized' ? 'todo' : mobileColumn)}
                 className={`flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-semibold transition-colors ${
                   isDarkMode
                     ? 'text-indigo-300 hover:bg-zinc-800'
@@ -1717,7 +1716,7 @@ export default function KanbanBoard({
             </div>
           </div>
 
-          {currentProject ? (
+          {currentProject && mobileColumn !== 'unrecognized' ? (
             <form
               onSubmit={(e) => void handleQuickCapture(e)}
               className={`shrink-0 border-t px-3 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] ${
@@ -1735,7 +1734,7 @@ export default function KanbanBoard({
                   type="text"
                   value={quickCaptureTitle}
                   onChange={(e) => setQuickCaptureTitle(e.target.value)}
-                  placeholder={`Add to ${BOARD_COLUMNS.find((c) => c.id === mobileColumn)?.title.toLowerCase()}…`}
+                  placeholder={`Add to ${visibleColumns.find((c) => c.id === mobileColumn)?.title.toLowerCase()}…`}
                   enterKeyHint="done"
                   autoComplete="off"
                   className={`min-h-11 min-w-0 flex-1 rounded-xl border px-3.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500/30 ${
@@ -1753,7 +1752,7 @@ export default function KanbanBoard({
                 </button>
                 <button
                   type="button"
-                  onClick={() => openCreateModal(mobileColumn)}
+                  onClick={() => openCreateModal(mobileColumn as Status)}
                   className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${
                     isDarkMode
                       ? 'border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800'
@@ -1769,10 +1768,13 @@ export default function KanbanBoard({
           ) : null}
         </div>
 
-        {/* Desktop: classic three-column board */}
+        {/* Desktop: scrollable status board; no column is hidden by a narrow viewport. */}
         <div className="hidden min-h-0 flex-1 overflow-auto px-4 pb-3 md:block">
-          <div className="grid grid-cols-3 items-stretch gap-x-5 lg:gap-x-6">
-            {BOARD_COLUMNS.map((column) => {
+          <div
+            className="grid items-stretch gap-x-5 lg:gap-x-6"
+            style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(15rem, 1fr))`, minWidth: `${visibleColumns.length * 16}rem` }}
+          >
+            {visibleColumns.map((column) => {
               const columnTasks = tasksByColumn[column.id];
               const count = columnTasks.length;
               const dragHere = dragOverColumn === column.id;
@@ -1787,9 +1789,9 @@ export default function KanbanBoard({
                         : 'border-indigo-400/70 bg-indigo-50/40'
                       : ''
                   }`}
-                  onDragOver={(e) => handleDragOver(e, column.id)}
-                  onDragLeave={(e) => handleColumnDragLeave(e, column.id)}
-                  onDrop={(e) => handleDrop(e, column.id)}
+                  onDragOver={column.id === 'unrecognized' ? undefined : (e) => handleDragOver(e, column.id)}
+                  onDragLeave={column.id === 'unrecognized' ? undefined : (e) => handleColumnDragLeave(e, column.id)}
+                  onDrop={column.id === 'unrecognized' ? undefined : (e) => handleDrop(e, column.id)}
                 >
                   <div
                     className={`sticky top-0 z-[1] flex shrink-0 items-baseline justify-between gap-2 border-b py-1.5 ${
