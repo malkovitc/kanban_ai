@@ -105,6 +105,28 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
       assert.equal(task.response.status, 200);
     }
 
+    for (const status of ['planning', 'blocked', 'archived']) {
+      const task = await post({
+        jsonrpc: '2.0', id: 24, method: 'tools/call',
+        params: { name: 'create_task', arguments: { project_id: projectId, title: status, sprint: 1, status } },
+      });
+      assert.equal(parseMcpResponse(task.body).result.isError, undefined);
+    }
+
+    for (const status of ['waiting', 'in_progress']) {
+      const legacy = await fetch(`http://127.0.0.1:${port}/api/local/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: { id: crypto.randomUUID(), project_id: projectId, title: status, status, sprint: 1 } }),
+      });
+      assert.equal(legacy.status, 201);
+      const rejected = await post({
+        jsonrpc: '2.0', id: 25, method: 'tools/call',
+        params: { name: 'create_task', arguments: { project_id: projectId, title: status, status } },
+      });
+      assert.equal(parseMcpResponse(rejected.body).result.isError, true);
+    }
+
     const board = await post({
       jsonrpc: '2.0', id: 30, method: 'tools/call',
       params: { name: 'get_board', arguments: { project_id: projectId, include_comments: false } },
@@ -113,8 +135,21 @@ test('self-hosted MCP is authenticated and reads every sprint without comments',
     const context = JSON.parse(boardPayload.result.content[0].text);
     assert.equal(typeof context.project.complete, 'boolean');
     assert.equal(typeof context.project.private, 'boolean');
-    assert.deepEqual(context.tasks.map((task) => task.sprint), [1, 2, 12]);
+    assert.deepEqual(context.tasks.map((task) => task.sprint), [1, 2, 12, 1, 1, 1, 1, 1]);
+    assert.deepEqual(context.tasks.slice(3).map((task) => task.status), ['planning', 'blocked', 'archived', 'waiting', 'in_progress']);
     assert.ok(context.tasks.every((task) => !Object.hasOwn(task, 'comments')));
+
+    const update = await post({
+      jsonrpc: '2.0', id: 31, method: 'tools/call',
+      params: { name: 'update_task', arguments: { task_id: context.tasks[3].id, status: 'archived' } },
+    });
+    assert.equal(parseMcpResponse(update.body).result.isError, undefined);
+    const updatedBoard = await post({
+      jsonrpc: '2.0', id: 32, method: 'tools/call',
+      params: { name: 'get_board', arguments: { project_id: projectId, include_comments: false } },
+    });
+    const updatedTasks = JSON.parse(parseMcpResponse(updatedBoard.body).result.content[0].text).tasks;
+    assert.equal(updatedTasks.find((task) => task.id === context.tasks[3].id).status, 'archived');
   } finally {
     if (child.exitCode === null) child.kill('SIGTERM');
     await exited;

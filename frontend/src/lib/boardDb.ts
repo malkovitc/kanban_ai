@@ -5,6 +5,7 @@ import { supabase } from './supabase';
 import { isLocalAppMode } from './localApp';
 import type { Project, Task } from '../types';
 import { mergeTaskWithDbRow, taskInsertPayload } from './taskDb';
+import { normalizeJoinedProject } from './projectJoin';
 
 const LOCAL = '/api/local';
 
@@ -26,12 +27,12 @@ async function localJson<T>(path: string, init?: RequestInit): Promise<T> {
 function mapCollabProjectsToAppShape(
   collaborations: {
     project_id: string;
-    projects: Record<string, unknown> | null;
+    projects: unknown;
   }[]
 ): Project[] {
   return collaborations
     .map((collaboration) => {
-      const project = collaboration.projects;
+      const project = normalizeJoinedProject(collaboration.projects);
       if (!project) return null;
       return {
         ...project,
@@ -80,7 +81,7 @@ export async function loadSidebarProjects(userId: string): Promise<Project[]> {
     .eq('accepted', true);
 
   if (error) throw error;
-  return mapCollabProjectsToAppShape((collaborations ?? []) as Parameters<typeof mapCollabProjectsToAppShape>[0]);
+  return mapCollabProjectsToAppShape(collaborations ?? []);
 }
 
 export async function deleteProjectCascade(projectId: string): Promise<void> {

@@ -1,4 +1,5 @@
 import type { Task } from '../types';
+import { BOARD_COLUMNS } from './boardStatus';
 import { PROJECT_BUILDER_CHAT_SYSTEM_PROMPT, PROJECT_BUILDER_REPLY_HINT, PROJECT_BUILDER_TOOLS_HINT, PROJECT_SETUP_SYSTEM_PROMPT } from './prompts';
 import type { ProjectBuilderDraft, ProjectSetupResult, GeneratedSetupTask, RoadmapPhase } from './projectSetup';
 import { titleFromBrief } from './projectSetup';
@@ -913,7 +914,7 @@ const projectTaskAssistantTools = [
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
           status: {
             type: 'string',
-            enum: ['todo', 'in-progress', 'done'],
+            enum: BOARD_COLUMNS.map((column) => column.id),
             description: 'Defaults to todo if omitted',
           },
           sprint: { type: 'integer', description: 'Sprint number (1-based), must fit project num_sprints' },
@@ -941,7 +942,7 @@ const projectTaskAssistantTools = [
           description: { type: 'string' },
           type: { type: 'string', enum: ['bug', 'feature', 'scope'] },
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
-          status: { type: 'string', enum: ['todo', 'in-progress', 'done'] },
+          status: { type: 'string', enum: BOARD_COLUMNS.map((column) => column.id) },
           sprint: { type: 'integer' },
           due_date: { type: 'string', description: 'YYYY-MM-DD' },
         },

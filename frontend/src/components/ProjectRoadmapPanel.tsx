@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, Map, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { updateProjectRow } from '../lib/boardDb';

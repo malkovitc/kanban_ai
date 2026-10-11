@@ -25,6 +25,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { v4 as uuidv4 } from 'uuid';
 import type { Project, Task, TaskComment } from '../types';
+import { BOARD_COLUMNS } from '../lib/boardStatus';
 import {
   runProjectTaskAssistant,
   getOpenAiProxyConfigured,
@@ -365,7 +366,7 @@ function activityPhaseKey(p: ProjectTaskAssistantProgress): string {
 
 const TASK_TYPES = new Set<Task['type']>(['bug', 'feature', 'scope']);
 const PRIORITIES = new Set<Task['priority']>(['low', 'medium', 'high']);
-const STATUSES = new Set<Task['status']>(['todo', 'in-progress', 'done']);
+const STATUSES = new Set<Task['status']>(BOARD_COLUMNS.map((column) => column.id));
 
 function clampSprint(value: unknown, maxSprints: number): number {
   const n = typeof value === 'number' ? value : parseInt(String(value), 10);
@@ -920,7 +921,8 @@ export default function ProjectTaskChat({
         try {
           await onDeleteTask(taskId);
           tasksRef.current = tasksRef.current.filter((t) => t.id !== taskId);
-          const { [taskId]: _removed, ...restComments } = commentsForContextRef.current;
+          const restComments = { ...commentsForContextRef.current };
+          delete restComments[taskId];
           commentsForContextRef.current = restComments;
           agentUndoStackRef.current.push({ kind: 'delete', task: snapshot });
           return JSON.stringify({
@@ -1001,7 +1003,8 @@ export default function ProjectTaskChat({
             case 'create': {
               await onDeleteTask(entry.taskId);
               tasksRef.current = tasksRef.current.filter((t) => t.id !== entry.taskId);
-              const { [entry.taskId]: _removed, ...restComments } = commentsForContextRef.current;
+              const restComments = { ...commentsForContextRef.current };
+              delete restComments[entry.taskId];
               commentsForContextRef.current = restComments;
               return JSON.stringify({
                 success: true,

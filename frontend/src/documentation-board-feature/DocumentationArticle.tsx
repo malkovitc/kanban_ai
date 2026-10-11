@@ -23,7 +23,6 @@ export default function DocumentationArticlePage({ isDarkMode }: DocumentationAr
   const category = getDocumentationCategoryById(doc.categoryId);
   const publishedIso = new Date(`${doc.date}T12:00:00.000Z`).toISOString();
 
-  const crumbMuted = isDarkMode ? 'text-zinc-500' : 'text-zinc-500';
   const crumbLink = isDarkMode
     ? 'text-zinc-400 hover:text-zinc-200'
     : 'text-zinc-600 hover:text-zinc-900';
